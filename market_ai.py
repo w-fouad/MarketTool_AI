@@ -1,6 +1,7 @@
 import os
+import pandas as pd
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 
 def analyze_market_gaps(reviews_df):
     if reviews_df.empty:
