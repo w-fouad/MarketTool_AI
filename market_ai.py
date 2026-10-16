@@ -1,67 +1,115 @@
 import os
-import pandas as pd
-from google import genai
+import streamlit as st
+import google.generativeai as genai
 
 def analyze_market_gaps(reviews_df):
-    if reviews_df is None or reviews_df.empty:
-        return "No reviews available."
+    if reviews_df.empty:
+        return "No reviews"
 
-    reviews_df["rating"] = pd.to_numeric(reviews_df["rating"], errors="coerce")
-    low = reviews_df[reviews_df["rating"] <= 2]
-
+    low = reviews_df[reviews_df["rating"] <= 2].head(30)
     if low.empty:
-        return "No low rated reviews found. All ratings are good, try analyzing all reviews."
-    
-    # قللنا من 100 لـ 40 عشان ما يعلق
-    low = low.head(40)
+        return "No low rated reviews found - all apps rated well!"
 
     text = ""
-    for _, row in low.iterrows():
-        t = str(row["review_text"]).strip()
-        if t and t.lower() != "nan" and len(t) > 10:
-            text += f"- {row['app_title']} ({row['rating']} stars): {t[:250]}\n"
-
-    if not text:
-        return "No usable text found."
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        try:
-            import streamlit as st
-            api_key = st.secrets.get("GEMINI_API_KEY")
-        except:
-            pass
-
-    if not api_key:
-        return "❌ Error: GEMINI_API_KEY not found. Go to Streamlit Settings > Secrets and add it."
-
-    prompt = f"""
-Analyze these {len(low)} bad reviews and give:
-1. Top 5 bugs/complaints
-2. Missing features users want
-3. 2 market opportunities
-4. 3 recommendations for a new app
-
-Keep it short and in bullet points.
-
-Reviews:
-{text}
-"""
+    for _, r in low.iterrows():
+        t = str(r["review_text"])[:200]
+        text += f"- {r['app_title']}: {t}\n"
 
     try:
-        client = genai.Client(api_key=api_key)
-        # غيرنا الموديل لـ 1.5-flash اسرع وما بعلق
-        res = client.models.generate_content(
-            model="gemini-1.5-flash", 
-            contents=prompt
-        )
-        if res and res.text:
-            return res.text
-        else:
-            return "Empty response from Gemini, try again."
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except:
+        api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        return "❌ Add GEMINI_API_KEY to Streamlit Secrets"
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        res = model.generate_content(f"Analyze these reviews and give bugs, missing features, 3 recommendations:\n{text}")
+        return res.text
     except Exception as e:
-        # هون كان يعلق، هلا رح يطلعلك الخطأ بالزبط
-        return f"❌ Gemini Error: {str(e)} \n\n Check: 1) API key is valid 2) You enabled Generative AI API in Google Cloud"
+        # جرب اسم ثاني لو فشل
+        try:
+            model = genai.GenerativeModel("gemini-pro")
+            res = model.generate_content(f"Analyze:\n{text}")
+            return res.text
+        except Exception as e2:
+            return f"Gemini failed: {e2}"
+
+
+
+
+
+
+
+
+# import os
+# import pandas as pd
+# from google import genai
+
+# def analyze_market_gaps(reviews_df):
+#     if reviews_df is None or reviews_df.empty:
+#         return "No reviews available."
+
+#     reviews_df["rating"] = pd.to_numeric(reviews_df["rating"], errors="coerce")
+#     low = reviews_df[reviews_df["rating"] <= 2]
+
+#     if low.empty:
+#         return "No low rated reviews found. All ratings are good."
+
+#     low = low.head(40)
+
+#     text = ""
+#     for _, row in low.iterrows():
+#         t = str(row["review_text"]).strip()
+#         if t and t.lower() != "nan" and len(t) > 10:
+#             text += f"- {row['app_title']} ({row['rating']} stars): {t[:250]}\n"
+
+#     if not text:
+#         return "No usable text found."
+
+#     api_key = os.getenv("GEMINI_API_KEY")
+#     if not api_key:
+#         try:
+#             import streamlit as st
+#             api_key = st.secrets.get("GEMINI_API_KEY")
+#         except:
+#             pass
+
+#     if not api_key:
+#         return "❌ Error: GEMINI_API_KEY not found in Secrets."
+
+#     prompt = f"""
+# Analyze these {len(low)} bad reviews and give:
+# 1. Top 5 bugs/complaints
+# 2. Missing features users want
+# 3. 2 market opportunities
+# 4. 3 recommendations for a new app
+
+# Keep it short and in bullet points.
+
+# Reviews:
+# {text}
+# """
+
+#     try:
+#         client = genai.Client(api_key=api_key)
+#         res = client.models.generate_content(
+#             model="gemini-2.0-flash",
+#             contents=prompt
+#         )
+#         return res.text if res.text else "Empty response, try again."
+#     except Exception as e:
+#         # اذا فشل 2.0 جرب 2.5
+#         try:
+#             res = client.models.generate_content(
+#                 model="gemini-2.5-flash",
+#                 contents=prompt
+#             )
+#             return res.text
+#         except Exception as e2:
+#             return f"❌ Gemini Error: {str(e2)}"
 # import os
 # import pandas as pd
 # import streamlit as st
