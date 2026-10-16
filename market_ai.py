@@ -1,54 +1,42 @@
 
 import os
+import time
 import pandas as pd
 from google import genai
 
 
-def analyze_market_gaps(reviews_df):
-    """
-    Analyze low-rated Google Play reviews using Gemini AI.
-    Identify customer complaints, missing features,
-    market opportunities, and strategic recommendations.
-    """
+def analyze_market_gaps(data):
+    if data is None or data.empty:
+        return "No reviews available."
 
-    # 1. Check whether review data is available
-    if reviews_df is None or reviews_df.empty:
-        return "No reviews are available for market gap analysis."
+    data = data.copy()
+    data["rating"] = pd.to_numeric(data["rating"], errors="coerce")
 
-    # 2. Check required columns
-    required_columns = {"review_text", "rating", "app_title"}
+    # Analyze low-rated reviews only
+    low = data[data["rating"] <= 2]
 
-    if not required_columns.issubset(reviews_df.columns):
-        missing = required_columns - set(reviews_df.columns)
-        return f"Missing required columns: {', '.join(sorted(missing))}"
+    if low.empty:
+        return "No low-rated reviews found (ratings 1 or 2)."
 
-    # 3. Select one-star and two-star reviews
-    ratings = pd.to_numeric(reviews_df["rating"], errors="coerce")
+    low = low.head(100)
+    reviews = []
 
-    low_rated = reviews_df.loc[ratings <= 2].copy()
+    for _, row in low.iterrows():
+        review_text = str(row.get("review_text", "")).strip()
 
-    if low_rated.empty:
-        return "No one-star or two-star reviews were found."
-
-    # 4. Prepare review text for AI analysis
-    sample = low_rated[["app_title", "rating", "review_text"]].head(100)
-
-    review_lines = []
-
-    for _, row in sample.iterrows():
-        text = str(row["review_text"]).strip()
-
-        if text and text.lower() != "nan":
-            review_lines.append(
-                f"App: {row['app_title']} | "
+        if review_text and review_text.lower() != "nan":
+            reviews.append(
+                f"App: {row.get('app_title', 'Unknown')} | "
                 f"Rating: {row['rating']} | "
-                f"Review: {text[:500]}"
+                f"Review: {review_text[:400]}"
             )
 
-    if not review_lines:
-        return "Low-rated reviews contain no usable text."
+    if not reviews:
+        return "No usable review text found."
 
-    # 5. Get the Gemini API key
+    reviews_text = "\n".join(reviews)
+
+    # Read API key from environment or Streamlit Secrets
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
@@ -59,57 +47,58 @@ def analyze_market_gaps(reviews_df):
             api_key = None
 
     if not api_key:
-        return (
-            "Gemini analysis is not configured. "
-            "Set GEMINI_API_KEY in your environment or "
-            "Streamlit secrets to enable AI analysis."
-        )
-
-    # 6. Build the AI prompt
-    reviews_text = "\n".join(review_lines)
+        return "Please set GEMINI_API_KEY in Streamlit Secrets."
 
     prompt = f"""
-You are a mobile-app market research analyst.
+You are a market research analyst.
 
-Analyze the following real low-rated Google Play reviews.
+Analyze these low-rated Google Play reviews and identify:
 
-Identify:
-1. Recurring bugs and customer complaints.
-2. Missing or desired features.
-3. Opportunities competitors are failing to address.
-4. Three practical strategic recommendations for a new app.
+1. Main bugs and customer complaints
+2. Missing features
+3. Market gaps and opportunities
+4. Three practical recommendations for a new app
+5. Limitations of this analysis
 
-Requirements:
-- Use only evidence supported by the supplied reviews.
-- Separate observed evidence from hypotheses.
-- Do not invent review data.
-- Do not claim a problem is frequent without sufficient evidence.
-- Compare apps only where the available evidence supports it.
-- Write in clear, professional English.
-- Include a short limitations note.
+Use only the review data provided. Do not invent facts.
 
-LOW-RATED REVIEWS:
+Reviews:
 {reviews_text}
 """
 
-    # 7. Send the reviews to Gemini
     try:
         client = genai.Client(api_key=api_key)
 
-        response = client.models.generate_content(
-           model="gemini-2.5-flash",
-            contents=prompt
-        )
+        for attempt in range(3):
+            try:
+                response = client.interactions.create(
+                    model="gemini-3.8-flash",
+                    input=prompt
+                )
 
-        if response.text:
-            return response.text
+                result = getattr(response, "output_text", None)
 
-        return "Gemini returned an empty response."
+                if result:
+                    return result
 
-    except Exception as exc:
-        return (
-            "Gemini analysis failed. Check your API key, "
-            "internet connection, and model availability.\n"
-            f"Technical details: {exc}"
-        )
+                return "Gemini returned an empty response."
 
+            except Exception as e:
+                error_message = str(e)
+                is_temporary = (
+                    "503" in error_message
+                    or "UNAVAILABLE" in error_message
+                )
+
+                if not is_temporary or attempt == 2:
+                    return (
+                        "Gemini analysis failed. "
+                        f"Technical details: {error_message}"
+                    )
+
+                time.sleep(2 * (attempt + 1))
+
+    except Exception as e:
+        return f"Gemini client error: {e}"
+
+    return "AI analysis could not be completed. Please try again."
