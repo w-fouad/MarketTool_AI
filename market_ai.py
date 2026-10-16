@@ -74,8 +74,8 @@ Reviews:
                 response = client.interactions.create(
                     model="gemini-3.8-flash",
                     input=prompt,
-                    timeout=60000
-)
+                    timeout=60
+    )
 
                 result = getattr(response, "output_text", None)
 
