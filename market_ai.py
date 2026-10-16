@@ -2,12 +2,12 @@ import os
 import pandas as pd
 from google import genai
 
-def analyze_market_gaps(reviews_df):
-    if reviews_df is None or reviews_df.empty:
+def analyze_market_gaps(data):
+    if data is None or data.empty:
         return "No reviews available."
 
-    reviews_df["rating"] = pd.to_numeric(reviews_df["rating"], errors="coerce")
-    low = reviews_df[reviews_df["rating"] <= 2]
+    data["rating"] = pd.to_numeric(data["rating"], errors="coerce")
+    low = data[data["rating"] <= 2]
 
     if low.empty:
         return "No low rated reviews found."
@@ -50,7 +50,7 @@ Reviews:
 
     try:
         client = genai.Client(api_key=api_key)
-        res = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        res = client.models.generate_content(model="gemini-3.8-flash", contents=prompt)
         return res.text if res.text else "Empty response"
     except Exception as e:
         return f"Error: {e}"
